@@ -1,0 +1,54 @@
+WITH registration_totals AS (
+  SELECT 
+    SUM(CAST(_c1 AS BIGINT)) AS registered_republican,
+    SUM(CAST(_c2 AS BIGINT)) AS registered_democrat,
+    SUM(CAST(_c5 AS BIGINT)) AS registered_total
+  FROM dbacademy.default.party_affiliation_by_county_2024
+  WHERE `Monthly Report - Voter Registration by Party Affiliation - Prior December` NOT LIKE '%ACTIVE REGISTERED VOTERS%'
+    AND `Monthly Report - Voter Registration by Party Affiliation - Prior December` NOT LIKE 'County%'
+    AND `Monthly Report - Voter Registration by Party Affiliation - Prior December` NOT LIKE 'Data as of%'
+    AND `Monthly Report - Voter Registration by Party Affiliation - Prior December` NOT LIKE 'Totals%'
+    AND _c1 IS NOT NULL
+    AND _c1 != ''
+    AND _c1 NOT LIKE '%Party%'
+), election_totals AS (
+  SELECT 
+    SPLIT(value, '\t')[6] AS county_code,
+    SPLIT(value, '\t')[1] AS party_code,
+    MAX(CAST(SPLIT(value, '\t')[14] AS BIGINT)) AS votes_cast
+  FROM dbacademy.default.Nov_2024_Pres
+  WHERE value NOT LIKE 'ElectionDate%'
+    AND SPLIT(value, '\t')[1] IN ('REP', 'DEM')
+  GROUP BY SPLIT(value, '\t')[6], SPLIT(value, '\t')[1]
+), republican_votes AS (
+  SELECT SUM(votes_cast) AS republican_votes
+  FROM election_totals
+  WHERE party_code = 'REP'
+), democrat_votes AS (
+  SELECT SUM(votes_cast) AS democrat_votes
+  FROM election_totals
+  WHERE party_code = 'DEM'
+), combined AS (
+  SELECT 
+    r.registered_republican,
+    r.registered_democrat,
+    r.registered_total,
+    COALESCE(rv.republican_votes, 0) AS republican_votes,
+    COALESCE(dv.democrat_votes, 0) AS democrat_votes,
+    COALESCE(rv.republican_votes, 0) + COALESCE(dv.democrat_votes, 0) AS total_votes
+  FROM registration_totals r
+  CROSS JOIN republican_votes rv
+  CROSS JOIN democrat_votes dv
+), unpivoted AS (
+  SELECT 'Republican' AS party, 'Registered' AS status, registered_republican AS count FROM combined
+  UNION ALL
+  SELECT 'Republican' AS party, 'Voted' AS status, republican_votes AS count FROM combined
+  UNION ALL
+  SELECT 'Democrat' AS party, 'Registered' AS status, registered_democrat AS count FROM combined
+  UNION ALL
+  SELECT 'Democrat' AS party, 'Voted' AS status, democrat_votes AS count FROM combined
+  UNION ALL
+  SELECT 'Total' AS party, 'Registered' AS status, registered_total AS count FROM combined
+  UNION ALL
+  SELECT 'Total' AS party, 'Voted' AS status, total_votes AS count FROM combined
+) SELECT * FROM unpivoted
