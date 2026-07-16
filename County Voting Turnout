@@ -1,0 +1,71 @@
+WITH county_codes AS (
+  SELECT 'ALA' AS code, 'ALACHUA' AS name UNION ALL SELECT 'BAK', 'BAKER' UNION ALL
+  SELECT 'BAY', 'BAY' UNION ALL SELECT 'BRA', 'BRADFORD' UNION ALL SELECT 'BRE', 'BREVARD' UNION ALL
+  SELECT 'BRO', 'BROWARD' UNION ALL SELECT 'CAL', 'CALHOUN' UNION ALL SELECT 'CHA', 'CHARLOTTE' UNION ALL
+  SELECT 'CIT', 'CITRUS' UNION ALL SELECT 'CLA', 'CLAY' UNION ALL SELECT 'CLL', 'COLLIER' UNION ALL
+  SELECT 'CLM', 'COLUMBIA' UNION ALL SELECT 'DES', 'DESOTO' UNION ALL SELECT 'DIX', 'DIXIE' UNION ALL
+  SELECT 'DUV', 'DUVAL' UNION ALL SELECT 'ESC', 'ESCAMBIA' UNION ALL SELECT 'FLA', 'FLAGLER' UNION ALL
+  SELECT 'FRA', 'FRANKLIN' UNION ALL SELECT 'GAD', 'GADSDEN' UNION ALL SELECT 'GIL', 'GILCHRIST' UNION ALL
+  SELECT 'GLA', 'GLADES' UNION ALL SELECT 'GUL', 'GULF' UNION ALL SELECT 'HAM', 'HAMILTON' UNION ALL
+  SELECT 'HAR', 'HARDEE' UNION ALL SELECT 'HEN', 'HENDRY' UNION ALL SELECT 'HER', 'HERNANDO' UNION ALL
+  SELECT 'HIG', 'HIGHLANDS' UNION ALL SELECT 'HIL', 'HILLSBOROUGH' UNION ALL SELECT 'HOL', 'HOLMES' UNION ALL
+  SELECT 'IND', 'INDIAN RIVER' UNION ALL SELECT 'JAC', 'JACKSON' UNION ALL SELECT 'JEF', 'JEFFERSON' UNION ALL
+  SELECT 'LAF', 'LAFAYETTE' UNION ALL SELECT 'LAK', 'LAKE' UNION ALL SELECT 'LEE', 'LEE' UNION ALL
+  SELECT 'LEO', 'LEON' UNION ALL SELECT 'LEV', 'LEVY' UNION ALL SELECT 'LIB', 'LIBERTY' UNION ALL
+  SELECT 'MAD', 'MADISON' UNION ALL SELECT 'MAN', 'MANATEE' UNION ALL SELECT 'MRN', 'MARION' UNION ALL
+  SELECT 'MRT', 'MARTIN' UNION ALL SELECT 'MIA', 'MIAMI-DADE' UNION ALL SELECT 'MON', 'MONROE' UNION ALL
+  SELECT 'NAS', 'NASSAU' UNION ALL SELECT 'OKA', 'OKALOOSA' UNION ALL SELECT 'OKE', 'OKEECHOBEE' UNION ALL
+  SELECT 'ORA', 'ORANGE' UNION ALL SELECT 'OSC', 'OSCEOLA' UNION ALL SELECT 'PAL', 'PALM BEACH' UNION ALL
+  SELECT 'PAS', 'PASCO' UNION ALL SELECT 'PIN', 'PINELLAS' UNION ALL SELECT 'POL', 'POLK' UNION ALL
+  SELECT 'PUT', 'PUTNAM' UNION ALL SELECT 'SAN', 'SANTA ROSA' UNION ALL SELECT 'SAR', 'SARASOTA' UNION ALL
+  SELECT 'SEM', 'SEMINOLE' UNION ALL SELECT 'STJ', 'ST. JOHNS' UNION ALL SELECT 'STL', 'ST. LUCIE' UNION ALL
+  SELECT 'SUM', 'SUMTER' UNION ALL SELECT 'SUW', 'SUWANNEE' UNION ALL SELECT 'TAY', 'TAYLOR' UNION ALL
+  SELECT 'UNI', 'UNION' UNION ALL SELECT 'VOL', 'VOLUSIA' UNION ALL SELECT 'WAK', 'WAKULLA' UNION ALL
+  SELECT 'WAL', 'WALTON' UNION ALL SELECT 'WAS', 'WASHINGTON'
+), registration AS (
+  SELECT 
+    UPPER(TRIM(`Monthly Report - Voter Registration by Party Affiliation - Prior December`)) AS county_name,
+    CAST(_c1 AS BIGINT) AS registered_rep,
+    CAST(_c2 AS BIGINT) AS registered_dem,
+    CAST(_c5 AS BIGINT) AS registered_all
+  FROM dbacademy.default.party_affiliation_by_county_2024
+  WHERE _c1 REGEXP '^[0-9]+$'
+    AND `Monthly Report - Voter Registration by Party Affiliation - Prior December` NOT LIKE 'TOTALS'
+), election_totals AS (
+  SELECT 
+    SPLIT(value, '\t')[5] AS county_code,
+    SPLIT(value, '\t')[1] AS party_code,
+    MAX(CAST(SPLIT(value, '\t')[15] AS BIGINT)) AS votes_cast
+  FROM dbacademy.default.Nov_2024_Pres
+  WHERE value NOT LIKE 'ElectionDate%'
+    AND SPLIT(value, '\t')[1] IN ('REP', 'DEM')
+  GROUP BY SPLIT(value, '\t')[5], SPLIT(value, '\t')[1]
+), votes_by_county AS (
+  SELECT 
+    cc.name AS county_name,
+    et.party_code,
+    et.votes_cast
+  FROM election_totals et
+  INNER JOIN county_codes cc ON et.county_code = cc.code
+), rep_votes AS (
+  SELECT county_name, votes_cast AS rep_votes 
+  FROM votes_by_county 
+  WHERE party_code = 'REP'
+), dem_votes AS (
+  SELECT county_name, votes_cast AS dem_votes 
+  FROM votes_by_county 
+  WHERE party_code = 'DEM'
+), final AS (
+  SELECT 
+    r.county_name,
+    r.registered_rep,
+    r.registered_dem,
+    r.registered_all,
+    COALESCE(rv.rep_votes, 0) AS rep_votes,
+    COALESCE(dv.dem_votes, 0) AS dem_votes,
+    COALESCE(rv.rep_votes, 0) + COALESCE(dv.dem_votes, 0) AS all_votes
+  FROM registration r
+  LEFT JOIN rep_votes rv ON r.county_name = rv.county_name
+  LEFT JOIN dem_votes dv ON r.county_name = dv.county_name
+) SELECT * FROM final
+;
